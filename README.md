@@ -1,2 +1,3 @@
 # simple-light-field-renderer
 Make light field rendered image with your smartphone/camera/...
+based on shift-n-add approach
