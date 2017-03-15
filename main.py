@@ -21,11 +21,21 @@ x_max = numpy.max(coords[:, 0])
 y_min = numpy.min(coords[:, 1])
 y_max = numpy.max(coords[:, 1])
 
-
+w = x_max - x_min
+h = y_max - y_min
 
 # Get the region
 regions = scipy.spatial.Delaunay(coords)
 edges = utils.get_edges_from_triangles(regions.simplices)
+
+qhull = scipy.spatial.ConvexHull(regions.points)
+area_ratio = qhull.volume / w / h
+
+n_pts = DEFAULT_NUM_INTERP / area_ratio
+
+w_sampling = numpy.sqrt(n_pts * w / h)
+n_w = int(w_sampling + 0.5)
+n_h = int(w_sampling * h / w +0.5)
 
 depth_map, focus_meas = utils.cal_depth_map(imgs, coords)
 
