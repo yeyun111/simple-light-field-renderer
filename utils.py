@@ -6,11 +6,11 @@ import numpy
 import cv2
 from matplotlib import pyplot
 
-DEFAULT_LONG_EDGE_LIMIT = 1280
+DEFAULT_LONG_EDGE_LIMIT = 1000
 FLANN_INDEX_LSH = 6
 ROI_RATIO = 0.5
-DEPTH_MAP_SHORT_EDGE_SIZE = 128
-DEFAULT_SHIFT_RANGE = (-1, 2)
+DEPTH_MAP_SHORT_EDGE_SIZE = 80
+DEFAULT_SHIFT_RANGE = (-1., 2.)
 
 
 def get_edges_from_triangles(triangles):
@@ -118,20 +118,38 @@ def cal_depth_map(images, coords, short_edge=DEPTH_MAP_SHORT_EDGE_SIZE, shift_ra
 
     h0, w0 = imgs[0].shape[:2]
     still_pixs = numpy.ones(depth_map.shape, dtype=numpy.uint8)
+    focus_measures = []
     for i, shift in enumerate(shifts):
         mats = [numpy.hstack([dumb_mat, shift * dcoord.reshape(2, 1)]) for dcoord in dcoords]
         shifted_imgs = [cv2.warpAffine(img, m, (w0, h0)) for img, m in zip(imgs, mats)]
         var_map = numpy.sum(numpy.var(shifted_imgs, axis=0), axis=2)
         prev_depth_map = depth_map.copy()
-        depth_map[var_map < min_var_map] = shift / scale
+        depth_map[var_map < min_var_map] = shift
         if i > 0:
             still_pixs[depth_map != prev_depth_map] = 0
 
         min_var_map = numpy.min([min_var_map, var_map], axis=0)
 
+        stacked_img = numpy.mean(shifted_imgs, axis=0)
+
+        focus_measure = 0
+        for j in range(3):
+            ch_grad = cv2.Laplacian(stacked_img[:, :, j], cv2.CV_64F)
+            focus_measure += numpy.var(ch_grad)
+
+        focus_measures.append(focus_measure)
+
+
+        #print('{:0>4d}.jpg'.format(i))
+        #cv2.imwrite('{:0>4d}.jpg'.format(i), stacked_img.astype(numpy.uint8))
+
     # Try to fix never update pixels ...
-    blurred_depth_map = cv2.GaussianBlur(depth_map, (5, 5), 0, borderType=cv2.BORDER_REFLECT101)
+    blurred_depth_map = cv2.GaussianBlur(depth_map, (5, 5), 0, borderType=cv2.BORDER_CONSTANT)
     depth_map[still_pixs == 1] = blurred_depth_map[still_pixs == 1]
 
+    pyplot.figure('hist')
+    pyplot.plot(focus_measures)
+    pyplot.show()
+
     depth_map = cv2.resize(depth_map, (w_ref, h_ref))
-    return depth_map
+    return depth_map, focus_measures
