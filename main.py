@@ -31,6 +31,8 @@ edges = utils.get_edges_from_triangles(regions.simplices)
 qhull = scipy.spatial.ConvexHull(regions.points)
 area_ratio = qhull.volume / w / h
 
+qhull_polygon = numpy.array([qhull.points[i] for i in qhull.vertices], dtype=numpy.float32)
+
 vol_samples = DEFAULT_NUM_INTERP / area_ratio
 
 num_x_samples = int(numpy.sqrt(vol_samples * w / h) + 0.5)
@@ -45,11 +47,21 @@ pyplot.imshow(depth_map, cmap='gray')
 x_samples = numpy.linspace(x_min, x_max, num_x_samples + 2)
 y_samples = numpy.linspace(y_min, y_max, num_y_samples + 2)
 
+interp_coords = {}
+
 # interpolate with 3 images around, to avoid error form far images and reduce computations
+triangles = numpy.sort(regions.simplices)
+interp_coords = {tuple(x): [] for x in triangles}
 for x in x_samples:
     for y in y_samples:
-        for triangle in regions.simplices:
-            if inside((x, y), triangle)
+        if cv2.pointPolygonTest(qhull_polygon, (x, y), False) > 0:
+            for triangle in triangles:
+                polygon = numpy.array([regions.points[i] for i in triangle], dtype=numpy.float32)
+                if cv2.pointPolygonTest(polygon, (x, y), False) > 0:
+                    interp_coords[tuple(triangle)].append((x, y))
+
+for triangle, samples in interp_coords:
+    pass
 
 pyplot.figure('triangles')
 pyplot.triplot(coords[:, 0], coords[:, 1], regions.simplices)

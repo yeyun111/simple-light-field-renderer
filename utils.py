@@ -12,6 +12,7 @@ FLANN_INDEX_LSH = 6
 ROI_RATIO = 0.5
 DEPTH_MAP_SHORT_EDGE_SIZE = 400
 DEFAULT_SHIFT_RANGE = (-1., 1.5)    # -1 is infinity, 1.5 is empirical
+DEFAULT_SUB_PIX_RATE = 0.5
 
 
 def get_edges_from_triangles(triangles):
@@ -155,3 +156,46 @@ def cal_depth_map(images, coords, short_edge=DEPTH_MAP_SHORT_EDGE_SIZE, shift_ra
     depth_map[still_pixs == 1] = blurred_depth_map[still_pixs == 1]
     depth_map = cv2.resize(depth_map, (w_ref, h_ref))
     return depth_map, focus_measures
+
+
+def interpolate_image(coords, images, interp_coord, sub_pix_rate=DEFAULT_SUB_PIX_RATE):
+    n = len(images)
+    dxdys = []
+    buff_imgs = []
+    distances = [numpy.linalg.norm(interp_coord-x) for x in coords]
+    for xy, image in images:
+        dxdys.append(np.array(xy)-coord)
+        buff_imgs.append(image)
+    alpha_step = (alpha_end-alpha_start)/float(n_alpha-1)
+    image_stack = []
+
+    image_stack = np.array(buff_imgs)
+    image = np.mean(image_stack, axis=0)
+    min_diff_map = difference_map(image_stack)
+    for i in range(n_alpha):
+        image_stack = []
+        alpha = alpha_start + i*alpha_step
+        for j in range(n):
+            dx, dy = dxdys[j]
+            beta = c_amp * (alpha - 1 )
+            t_row, t_col = beta * dx, beta * dy
+            M = np.array([[1, 0, t_col], [0, 1, t_row]])
+            buff_img = cv2.warpAffine(buff_imgs[j], M, buff_imgs[j].shape[:-1])
+            image_stack.append(buff_img)
+        image_stack = np.array(image_stack)
+        buff_img = np.mean(image_stack, axis=0)
+        diff_map = difference_map(image_stack)
+        update_indices = np.where(diff_map<min_diff_map)
+
+        '''
+        plt.figure('test_diff_map')
+        plt.imshow(diff_map, cmap='gray')
+        plt.figure('min_diff_map')
+        plt.imshow(min_diff_map, cmap='gray')
+        plt.show()
+        '''
+
+        image[update_indices] = buff_img[update_indices]
+        min_diff_map[update_indices] = diff_map[update_indices]
+
+    return image
