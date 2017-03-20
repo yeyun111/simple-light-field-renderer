@@ -12,7 +12,7 @@ FLANN_INDEX_LSH = 6
 ROI_RATIO = 0.5
 DEPTH_MAP_SHORT_EDGE_SIZE = 400
 DEFAULT_SHIFT_RANGE = (-1., 1.5)    # -1 is infinity, 1.5 is empirical
-DEFAULT_SUB_PIX_RATE = 0.5
+DEFAULT_SUB_PIX_RATE = 1.0
 
 
 def get_edges_from_triangles(triangles):
@@ -90,7 +90,7 @@ def calibrate_images(images):
     return images, coords
 
 
-def images_pixel_variance(images):
+def variance_map(images):
     imgs = numpy.asarray(images)
     dim = len(imgs.shape)
     if dim == 4:
@@ -124,7 +124,7 @@ def cal_depth_map(images, coords, short_edge=DEPTH_MAP_SHORT_EDGE_SIZE, shift_ra
     depth_map = numpy.zeros(imgs[0].shape[:2], dtype=numpy.float32)
     min_var_map = numpy.ones(imgs[0].shape[:2], dtype=numpy.float32) * 1e9
 
-    dumb_mat = numpy.array([
+    unit_mat = numpy.array([
         [1, 0],
         [0, 1]
     ])
@@ -133,9 +133,9 @@ def cal_depth_map(images, coords, short_edge=DEPTH_MAP_SHORT_EDGE_SIZE, shift_ra
     still_pixs = numpy.ones(depth_map.shape, dtype=numpy.uint8)
     focus_measures = []
     for i, shift in enumerate(shifts):
-        mats = [numpy.hstack([dumb_mat, shift * dcoord.reshape(2, 1)]) for dcoord in dcoords]
+        mats = [numpy.hstack([unit_mat, shift * dcoord.reshape(2, 1)]) for dcoord in dcoords]
         shifted_imgs = [cv2.warpAffine(img, m, (w0, h0)) for img, m in zip(imgs, mats)]
-        var_map = images_pixel_variance(shifted_imgs)
+        var_map = variance_map(shifted_imgs)
         prev_depth_map = depth_map.copy()
         depth_map[var_map < min_var_map] = shift
         if i > 0:
@@ -158,44 +158,46 @@ def cal_depth_map(images, coords, short_edge=DEPTH_MAP_SHORT_EDGE_SIZE, shift_ra
     return depth_map, focus_measures
 
 
-def interpolate_image(coords, images, interp_coord, sub_pix_rate=DEFAULT_SUB_PIX_RATE):
-    n = len(images)
-    dxdys = []
-    buff_imgs = []
-    distances = [numpy.linalg.norm(interp_coord-x) for x in coords]
-    for xy, image in images:
-        dxdys.append(np.array(xy)-coord)
-        buff_imgs.append(image)
-    alpha_step = (alpha_end-alpha_start)/float(n_alpha-1)
-    image_stack = []
+def interpolate_image(located_images, interp_coords,
+                      sub_pix_rate=DEFAULT_SUB_PIX_RATE,
+                      shift_range=DEFAULT_SHIFT_RANGE):
 
-    image_stack = np.array(buff_imgs)
-    image = np.mean(image_stack, axis=0)
-    min_diff_map = difference_map(image_stack)
-    for i in range(n_alpha):
-        image_stack = []
-        alpha = alpha_start + i*alpha_step
-        for j in range(n):
-            dx, dy = dxdys[j]
-            beta = c_amp * (alpha - 1 )
-            t_row, t_col = beta * dx, beta * dy
-            M = np.array([[1, 0, t_col], [0, 1, t_row]])
-            buff_img = cv2.warpAffine(buff_imgs[j], M, buff_imgs[j].shape[:-1])
-            image_stack.append(buff_img)
-        image_stack = np.array(image_stack)
-        buff_img = np.mean(image_stack, axis=0)
-        diff_map = difference_map(image_stack)
-        update_indices = np.where(diff_map<min_diff_map)
+    coords = []
+    images = []
+    for coord, image in located_images:
+        coords.append(coord)
+        images.append(image)
 
-        '''
-        plt.figure('test_diff_map')
-        plt.imshow(diff_map, cmap='gray')
-        plt.figure('min_diff_map')
-        plt.imshow(min_diff_map, cmap='gray')
-        plt.show()
-        '''
+    h, w = images[0].shape[:2]
+    unit_mat = numpy.array([
+        [1, 0],
+        [0, 1]
+    ])
 
-        image[update_indices] = buff_img[update_indices]
-        min_diff_map[update_indices] = diff_map[update_indices]
+    interp_images = []
+    for interp_coord in interp_coords:
+        distances = [numpy.linalg.norm(interp_coord-x) for x in coords]
+        num_shifts = int(numpy.mean(distances) / sub_pix_rate + 0.5) * (shift_range[1] - shift_range[0])
+        alphas = numpy.linspace(*shift_range, num_shifts)
+        # assume all images are equal size
+        interp_image = numpy.mean(images, axis=0)
+        min_diff_map = variance_map(images)
+        for alpha in alphas:
+            print(alpha)
+            image_stack = []
+            for coord, image in zip(coords, images):
+                m_shift = numpy.hstack([unit_mat, alpha * coord.reshape(2, 1)])
+                shifted_img = cv2.warpAffine(image, m_shift, (w, h))
+                image_stack.append(shifted_img)
+            diff_map = variance_map(image_stack)
+            mean_shifted_image = numpy.mean(image_stack, axis=0)
 
-    return image
+            update_positions = numpy.where(diff_map < min_diff_map)
+            interp_image[update_positions] = mean_shifted_image[update_positions]
+            min_diff_map[update_positions] = diff_map[update_positions]
+        interp_images.append((interp_coord, interp_image))
+
+        image_name = '{}_{}.jpg'.format(*interp_coord)
+        cv2.imwrite(image_name, interp_image.astype(numpy.uint8))
+
+    return interp_images

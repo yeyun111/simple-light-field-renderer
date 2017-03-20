@@ -60,8 +60,10 @@ for x in x_samples:
                 if cv2.pointPolygonTest(polygon, (x, y), False) > 0:
                     interp_coords[tuple(triangle)].append((x, y))
 
-for triangle, samples in interp_coords:
-    pass
+located_images = [(coord, img) for (coord, img) in zip(coords, imgs)]
+for triangle, samples in interp_coords.items():
+    triangle_images = [located_images[i] for i in triangle]
+    utils.interpolate_image(triangle_images, samples)
 
 pyplot.figure('triangles')
 pyplot.triplot(coords[:, 0], coords[:, 1], regions.simplices)
