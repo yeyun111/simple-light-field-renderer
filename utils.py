@@ -195,9 +195,66 @@ def interpolate_image(located_images, interp_coords,
             update_positions = numpy.where(diff_map < min_diff_map)
             interp_image[update_positions] = mean_shifted_image[update_positions]
             min_diff_map[update_positions] = diff_map[update_positions]
-        interp_images.append((interp_coord, interp_image))
+        interp_images.append((numpy.array(interp_coord), interp_image))
 
         image_name = '{}_{}.jpg'.format(*interp_coord)
         cv2.imwrite(image_name, interp_image.astype(numpy.uint8))
 
     return interp_images
+
+def make_refocused_images(located_images):
+    # check if images are same size
+    h_ref, w_ref = images[0].shape[:2]
+    for image in images[1:]:
+        h, w = image.shape[:2]
+        if h != h_ref or w != w_ref:
+            print('Bad inputs!')
+            return None
+
+    scale = short_edge / min(h_ref, w_ref)
+    imgs = []
+    if scale < 1:
+        for i in range(len(images)):
+            imgs.append(cv2.resize(images[i], (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR))
+    else:
+        scale = 1.
+
+    dcoords = [x * scale for x in coords]
+    shifts = numpy.linspace(*shift_range, 100)
+
+    depth_map = numpy.zeros(imgs[0].shape[:2], dtype=numpy.float32)
+    min_var_map = numpy.ones(imgs[0].shape[:2], dtype=numpy.float32) * 1e9
+
+    unit_mat = numpy.array([
+        [1, 0],
+        [0, 1]
+    ])
+
+    h0, w0 = imgs[0].shape[:2]
+    still_pixs = numpy.ones(depth_map.shape, dtype=numpy.uint8)
+    focus_measures = []
+    for i, shift in enumerate(shifts):
+        mats = [numpy.hstack([unit_mat, shift * dcoord.reshape(2, 1)]) for dcoord in dcoords]
+        shifted_imgs = [cv2.warpAffine(img, m, (w0, h0)) for img, m in zip(imgs, mats)]
+        var_map = variance_map(shifted_imgs)
+        prev_depth_map = depth_map.copy()
+        depth_map[var_map < min_var_map] = shift
+        if i > 0:
+            still_pixs[depth_map != prev_depth_map] = 0
+
+        min_var_map = numpy.min([min_var_map, var_map], axis=0)
+        stacked_img = numpy.mean(shifted_imgs, axis=0)
+
+        focus_measure = 0
+        for j in range(3):
+            ch_grad = cv2.Laplacian(stacked_img[:, :, j], cv2.CV_64F)
+            focus_measure += ch_grad.var()
+
+        focus_measures.append(focus_measure)
+
+    # Try to fix some never update pixels ...
+    blurred_depth_map = scipy.ndimage.median_filter(depth_map, 5)
+    depth_map[still_pixs == 1] = blurred_depth_map[still_pixs == 1]
+    depth_map = cv2.resize(depth_map, (w_ref, h_ref))
+    return depth_map, focus_measures
+

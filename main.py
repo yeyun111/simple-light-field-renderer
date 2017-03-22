@@ -5,7 +5,7 @@ import cv2
 from matplotlib import pyplot
 import utils
 
-DEFAULT_NUM_INTERP = 100
+DEFAULT_NUM_INTERP = 10
 
 input_path = r'examples/Batman'
 
@@ -44,8 +44,10 @@ pyplot.figure('depth')
 pyplot.imshow(depth_map, cmap='gray')
 
 # make samples
-x_samples = numpy.linspace(x_min, x_max, num_x_samples + 2)
-y_samples = numpy.linspace(y_min, y_max, num_y_samples + 2)
+x_interval = (x_max - x_min) / num_x_samples
+y_interval = (y_max - y_min) / num_y_samples
+x_samples = numpy.linspace(x_min + 0.5*x_interval, x_max - 0.5*x_interval, num_x_samples)
+y_samples = numpy.linspace(y_min + 0.5*y_interval, y_max - 0.5*y_interval, num_y_samples)
 
 interp_coords = {}
 
@@ -60,10 +62,15 @@ for x in x_samples:
                 if cv2.pointPolygonTest(polygon, (x, y), False) > 0:
                     interp_coords[tuple(triangle)].append((x, y))
 
+n_samples = sum([len(x) for x in interp_coords.values()])
+
 located_images = [(coord, img) for (coord, img) in zip(coords, imgs)]
 for triangle, samples in interp_coords.items():
     triangle_images = [located_images[i] for i in triangle]
-    utils.interpolate_image(triangle_images, samples)
+    located_images.extend(utils.interpolate_image(triangle_images, samples))
+
+# make refocused images
+
 
 pyplot.figure('triangles')
 pyplot.triplot(coords[:, 0], coords[:, 1], regions.simplices)
