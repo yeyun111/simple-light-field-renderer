@@ -85,7 +85,8 @@ def calibrate_images(images):
         coords.append([m[0][2], m[1][2]])
 
     coords = numpy.array(coords)
-    coords -= numpy.mean(coords, axis=0)
+    mean_coord = numpy.mean(coords, axis=0)
+    coords = [numpy.array(x)-mean_coord for x in coords]
 
     return images, coords
 
@@ -158,15 +159,9 @@ def cal_depth_map(images, coords, short_edge=DEPTH_MAP_SHORT_EDGE_SIZE, shift_ra
     return depth_map, focus_measures
 
 
-def interpolate_image(located_images, interp_coords,
+def interpolate_image(images, coords, interp_coords,
                       sub_pix_rate=DEFAULT_SUB_PIX_RATE,
                       shift_range=DEFAULT_SHIFT_RANGE):
-
-    coords = []
-    images = []
-    for coord, image in located_images:
-        coords.append(coord)
-        images.append(image)
 
     h, w = images[0].shape[:2]
     unit_mat = numpy.array([
@@ -176,7 +171,7 @@ def interpolate_image(located_images, interp_coords,
 
     interp_images = []
     for interp_coord in interp_coords:
-        distances = [numpy.linalg.norm(interp_coord-x) for x in coords]
+        distances = [numpy.linalg.norm(numpy.array(interp_coord)-x) for x in coords]
         num_shifts = int(numpy.mean(distances) / sub_pix_rate + 0.5) * (shift_range[1] - shift_range[0])
         alphas = numpy.linspace(*shift_range, num_shifts)
         # assume all images are equal size
@@ -195,30 +190,17 @@ def interpolate_image(located_images, interp_coords,
             update_positions = numpy.where(diff_map < min_diff_map)
             interp_image[update_positions] = mean_shifted_image[update_positions]
             min_diff_map[update_positions] = diff_map[update_positions]
-        interp_images.append((numpy.array(interp_coord), interp_image))
+        interp_images.append(interp_image)
 
         image_name = '{}_{}.jpg'.format(*interp_coord)
         cv2.imwrite(image_name, interp_image.astype(numpy.uint8))
 
     return interp_images
 
+'''
 def make_refocused_images(located_images):
     # check if images are same size
-    h_ref, w_ref = images[0].shape[:2]
-    for image in images[1:]:
-        h, w = image.shape[:2]
-        if h != h_ref or w != w_ref:
-            print('Bad inputs!')
-            return None
-
-    scale = short_edge / min(h_ref, w_ref)
-    imgs = []
-    if scale < 1:
-        for i in range(len(images)):
-            imgs.append(cv2.resize(images[i], (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR))
-    else:
-        scale = 1.
-
+    h_ref, w_ref = located_images[0][1].shape[:2]
     dcoords = [x * scale for x in coords]
     shifts = numpy.linspace(*shift_range, 100)
 
@@ -257,4 +239,4 @@ def make_refocused_images(located_images):
     depth_map[still_pixs == 1] = blurred_depth_map[still_pixs == 1]
     depth_map = cv2.resize(depth_map, (w_ref, h_ref))
     return depth_map, focus_measures
-
+'''

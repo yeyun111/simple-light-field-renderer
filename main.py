@@ -7,7 +7,7 @@ import utils
 
 DEFAULT_NUM_INTERP = 10
 
-input_path = r'examples/Batman'
+input_path = r'examples/rabbit'
 
 # Preprocess a image list
 img_list = [os.sep.join([input_path, x]) for x in os.listdir(input_path) if x.lower().endswith('jpg')]
@@ -16,10 +16,10 @@ imgs = [utils.limit_image_size(cv2.imread(x)) for x in img_list]
 # Calibrate images
 imgs, coords = utils.calibrate_images(imgs)
 
-x_min = numpy.min(coords[:, 0])
-x_max = numpy.max(coords[:, 0])
-y_min = numpy.min(coords[:, 1])
-y_max = numpy.max(coords[:, 1])
+x_min = numpy.array(coords)[:, 0].min()
+x_max = numpy.array(coords)[:, 0].max()
+y_min = numpy.array(coords)[:, 1].min()
+y_max = numpy.array(coords)[:, 1].max()
 
 w = x_max - x_min
 h = y_max - y_min
@@ -60,15 +60,17 @@ for x in x_samples:
             for triangle in triangles:
                 polygon = numpy.array([regions.points[i] for i in triangle], dtype=numpy.float32)
                 if cv2.pointPolygonTest(polygon, (x, y), False) > 0:
-                    interp_coords[tuple(triangle)].append((x, y))
+                    interp_coords[tuple(triangle)].append(numpy.array([x, y]))
 
 n_samples = sum([len(x) for x in interp_coords.values()])
 
-located_images = [(coord, img) for (coord, img) in zip(coords, imgs)]
 for triangle, samples in interp_coords.items():
-    triangle_images = [located_images[i] for i in triangle]
-    located_images.extend(utils.interpolate_image(triangle_images, samples))
+    triangle_images = [imgs[i] for i in triangle]
+    triangle_coords = [coords[i] for i in triangle]
+    triangle_interp_images = utils.interpolate_image(triangle_images, triangle_coords, samples)
 
+    coords.extend(triangle_coords)
+    imgs.extend(triangle_interp_images)
 # make refocused images
 
 
