@@ -44,6 +44,7 @@ def calibrate_rois(rois):
     kp0, des0 = kp_n_des_list[0]
 
     mats = []
+    #i = 1
     for kp, des in kp_n_des_list[1:]:
         matches = flann.knnMatch(des0, des, k=2)
         good_matches = []
@@ -54,6 +55,13 @@ def calibrate_rois(rois):
         src_pts = numpy.float32([kp[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
         mat_affine = cv2.estimateRigidTransform(src_pts, dst_pts, False)
         mats.append(mat_affine)
+
+        #img_matching = cv2.drawMatches(rois[0], kp0, rois[i], kp, good_matches, None, flags=2)
+        #pyplot.figure(i)
+        #pyplot.imshow(img_matching)
+        #i += 1
+
+    #pyplot.show()
 
     return mats
 
