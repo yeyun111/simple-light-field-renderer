@@ -7,7 +7,7 @@ import scipy.ndimage
 import cv2
 from matplotlib import pyplot
 
-DEFAULT_LONG_EDGE_LIMIT = 1000
+DEFAULT_LONG_EDGE_LIMIT = 600
 FLANN_INDEX_LSH = 6
 ROI_RATIO = 0.5
 DEPTH_MAP_SHORT_EDGE_SIZE = 400
@@ -49,7 +49,7 @@ def calibrate_rois(rois):
         matches = flann.knnMatch(des0, des, k=2)
         good_matches = []
         for match in matches:
-            if len(match) == 2 and match[0].distance < 0.7 * match[1].distance:
+            if len(match) == 2 and match[0].distance < 0.6 * match[1].distance:
                 good_matches.append(match[0])
         dst_pts = numpy.float32([kp0[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
         src_pts = numpy.float32([kp[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
@@ -205,27 +205,26 @@ def interpolate_image(images, coords, interp_coords,
 
     return interp_images
 
-'''
-def make_refocused_images(located_images):
+
+def make_refocused_images(coords, images, shift_range=DEFAULT_SHIFT_RANGE):
     # check if images are same size
-    h_ref, w_ref = located_images[0][1].shape[:2]
-    dcoords = [x * scale for x in coords]
+    h_ref, w_ref = images[0].shape[:2]
     shifts = numpy.linspace(*shift_range, 100)
 
-    depth_map = numpy.zeros(imgs[0].shape[:2], dtype=numpy.float32)
-    min_var_map = numpy.ones(imgs[0].shape[:2], dtype=numpy.float32) * 1e9
+    depth_map = numpy.zeros(images[0].shape[:2], dtype=numpy.float32)
+    min_var_map = numpy.ones(images[0].shape[:2], dtype=numpy.float32) * 1e9
 
     unit_mat = numpy.array([
         [1, 0],
         [0, 1]
     ])
 
-    h0, w0 = imgs[0].shape[:2]
+    h0, w0 = images[0].shape[:2]
     still_pixs = numpy.ones(depth_map.shape, dtype=numpy.uint8)
     focus_measures = []
     for i, shift in enumerate(shifts):
-        mats = [numpy.hstack([unit_mat, shift * dcoord.reshape(2, 1)]) for dcoord in dcoords]
-        shifted_imgs = [cv2.warpAffine(img, m, (w0, h0)) for img, m in zip(imgs, mats)]
+        mats = [numpy.hstack([unit_mat, shift * coord.reshape(2, 1)]) for coord in coords]
+        shifted_imgs = [cv2.warpAffine(img, m, (w0, h0)) for img, m in zip(images, mats)]
         var_map = variance_map(shifted_imgs)
         prev_depth_map = depth_map.copy()
         depth_map[var_map < min_var_map] = shift
@@ -234,6 +233,10 @@ def make_refocused_images(located_images):
 
         min_var_map = numpy.min([min_var_map, var_map], axis=0)
         stacked_img = numpy.mean(shifted_imgs, axis=0)
+
+        cv2.imshow('ttt', stacked_img.astype(numpy.uint8))
+        cv2.imwrite('refocused_{}.jpg'.format(shift), stacked_img.astype(numpy.uint8))
+        cv2.waitKey(10)
 
         focus_measure = 0
         for j in range(3):
@@ -247,4 +250,4 @@ def make_refocused_images(located_images):
     depth_map[still_pixs == 1] = blurred_depth_map[still_pixs == 1]
     depth_map = cv2.resize(depth_map, (w_ref, h_ref))
     return depth_map, focus_measures
-'''
+
